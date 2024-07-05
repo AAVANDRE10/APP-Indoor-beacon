@@ -8,6 +8,8 @@ import android.os.Build
 import android.os.Bundle
 import android.os.RemoteException
 import android.util.Log
+import android.view.View
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -18,6 +20,8 @@ import org.altbeacon.beacon.BeaconParser
 import org.altbeacon.beacon.Region
 import com.example.beacon.data.entities.Position
 import com.example.beacon.data.entities.BeaconPosition
+import android.graphics.*
+import android.widget.RelativeLayout
 
 @Suppress("DEPRECATION")
 class MainActivity : AppCompatActivity(), BeaconConsumer {
@@ -27,23 +31,25 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
         Pair(1234 to 4321, "A"),
         Pair(7621 to 42517, "B"),
         Pair(8358 to 30324, "C"),
-        //Pair(60390 to 23173, "D"),
-        //Pair(23835 to 50544, "E"),
-        //Pair(5895 to 10259, "F"),
-        //Pair(34308 to 7692, "G"),
-        //Pair(64608 to 31, "H")
+        Pair(60390 to 23173, "D"),
+        Pair(23835 to 50544, "E"),
+        Pair(5895 to 10259, "F"),
+        Pair(34308 to 7692, "G"),
+        Pair(64608 to 31, "H")
     )
 
     private val beaconPositions = mapOf(
-        "A" to BeaconPosition(0.0, 0.0, "A"),
-        "B" to BeaconPosition(10.0, 0.0, "B"),
-        "C" to BeaconPosition(0.0, 10.0, "C"),
-        //"D" to BeaconPosition(10.0, 10.0, "D"),
-        //"E" to BeaconPosition(5.0, 5.0, "E"),
-        //"F" to BeaconPosition(15.0, 0.0, "F"),
-        //"G" to BeaconPosition(0.0, 15.0, "G"),
-        //"H" to BeaconPosition(15.0, 15.0, "H")
+        "A" to BeaconPosition(7.0, 2.0, "A"), // Quarto 1
+        "B" to BeaconPosition(5.0, 3.0, "B"), // Cozinha
+        "C" to BeaconPosition(4.0, 3.0, "C"), // Sala de Jantar
+        "D" to BeaconPosition(5.0, 5.0, "D"), // Sala de Estar
+        "E" to BeaconPosition(7.0, 3.0, "E"), // Quarto 2
+        "F" to BeaconPosition(7.0, 4.0, "F"), // Quarto 3
+        "G" to BeaconPosition(6.0, 2.0, "G"), // Arrumos
+        "H" to BeaconPosition(6.0, 3.0, "H")  // Garagem
     )
+
+    private var currentLocationView: ImageView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,9 +58,12 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
         // Verifica e solicita permissões
         requestPermissionsIfNeeded()
 
-        // Inicia do BeaconManager
+        // Inicia o BeaconManager
         beaconManager = BeaconManager.getInstanceForApplication(this)
         beaconManager.beaconParsers.add(BeaconParser().setBeaconLayout("m:2-3=0215,i:4-19,i:20-21,i:22-23,p:24-24"))
+
+        // Desenha a grelha na imagem da planta
+        drawGridOnMap()
 
         beaconManager.bind(this)
     }
@@ -91,23 +100,51 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
                     Manifest.permission.BLUETOOTH_CONNECT
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
-                // TODO: Consider calling
-                //    ActivityCompat#requestPermissions
-                // here to request the missing permissions, and then overriding
-                //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-                //                                          int[] grantResults)
-                // to handle the case where the user grants the permission. See the documentation
-                // for ActivityCompat#requestPermissions for more details.
                 return
             }
             startActivityForResult(enableBtIntent, 1)
         }
     }
 
+    private fun drawGridOnMap() {
+        val relativeLayout = findViewById<RelativeLayout>(R.id.map_layout)
+        val imageView = ImageView(this)
+        val bitmap = Bitmap.createBitmap(800, 800, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val paint = Paint()
+
+        // Desenhar a planta de fundo
+        val background = BitmapFactory.decodeResource(resources, R.drawable.output)
+        val scaleFactor = Math.min(bitmap.width.toFloat() / background.width, bitmap.height.toFloat() / background.height)
+        val scaledBitmap = Bitmap.createScaledBitmap(background, (background.width * scaleFactor).toInt(), (background.height * scaleFactor).toInt(), true)
+        canvas.drawBitmap(scaledBitmap, 0f, 0f, paint)
+
+        // Configurar a pintura para o texto
+        paint.color = Color.RED
+        paint.style = Paint.Style.STROKE
+        paint.textSize = 20f
+
+        // Desenhar a grelha e os números
+        val gridSize = 100
+        for (i in 0..7) {
+            for (j in 0..7) {
+                val x = i * gridSize
+                val y = j * gridSize
+                canvas.drawRect(x.toFloat(), y.toFloat(), (x + gridSize).toFloat(), (y + gridSize).toFloat(), paint)
+                canvas.drawText("$i,$j", (x + 10).toFloat(), (y + 20).toFloat(), paint)
+            }
+        }
+
+        imageView.setImageBitmap(bitmap)
+        relativeLayout.addView(imageView)
+    }
+
     override fun onBeaconServiceConnect() {
         beaconManager.addRangeNotifier { beacons, region ->
             runOnUiThread {
                 val textView = findViewById<TextView>(R.id.textView)
+                val mapLayout = findViewById<RelativeLayout>(R.id.map_layout)
+
                 val beaconDistances = beacons.associate {
                     val identifier = beaconIdentifiers[it.id2.toInt() to it.id3.toInt()] ?: "Desconhecido"
                     identifier to it.distance
@@ -120,9 +157,32 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
                         val identifier = beaconIdentifiers[beacon.id2.toInt() to beacon.id3.toInt()] ?: "Desconhecido"
                         append("Identificador: $identifier, UUID: ${beacon.id1}, Major: ${beacon.id2}, Minor: ${beacon.id3}, Distância: ${String.format("%.2f", beacon.distance)}m\n")
                     }
-                    position?.let {
-                        append("Posição Estimada: (${String.format("%.2f", it.x)}, ${String.format("%.2f", it.y)})\n")
-                    }
+                }
+
+                position?.let {
+                    // Remover a localização anterior, se existir
+                    currentLocationView?.let { mapLayout.removeView(it) }
+
+                    // Ajuste a escala conforme necessário
+                    val escala = 100.0f // Ajustar conforme necessário para o tamanho do grid
+                    val x = (it.x * escala).toFloat()
+                    val y = (it.y * escala).toFloat()
+                    Log.d("MainActivity", "Posição Estimada: x=$x, y=$y") // Adiciona logs para depuração
+
+                    // Criar um ImageView para a posição estimada
+                    val estimatedPositionIcon = ImageView(this@MainActivity)
+                    estimatedPositionIcon.setImageResource(R.drawable.baseline_location_on_24)
+                    val layoutParams = RelativeLayout.LayoutParams(
+                        RelativeLayout.LayoutParams.WRAP_CONTENT,
+                        RelativeLayout.LayoutParams.WRAP_CONTENT
+                    )
+                    layoutParams.leftMargin = x.toInt()
+                    layoutParams.topMargin = y.toInt()
+                    estimatedPositionIcon.layoutParams = layoutParams
+                    mapLayout.addView(estimatedPositionIcon)
+
+                    // Guardar a referência à localização atual
+                    currentLocationView = estimatedPositionIcon
                 }
             }
         }

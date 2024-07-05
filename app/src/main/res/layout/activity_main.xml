@@ -16,4 +16,17 @@
             android:text="Detectando Beacons..."
             android:textSize="18sp"/>
     </ScrollView>
+
+    <RelativeLayout
+        android:id="@+id/map_layout"
+        android:layout_width="match_parent"
+        android:layout_height="300dp">
+        <ImageView
+            android:id="@+id/estimated_position_icon"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:src="@drawable/baseline_location_on_24"
+            android:layout_gravity="center"
+            android:visibility="gone" />
+    </RelativeLayout>
 </LinearLayout>
