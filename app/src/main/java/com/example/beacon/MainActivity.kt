@@ -39,17 +39,19 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
     )
 
     private val beaconPositions = mapOf(
-        "A" to BeaconPosition(7.0, 2.0, "A"), // Quarto 1
-        "B" to BeaconPosition(5.0, 3.0, "B"), // Cozinha
-        "C" to BeaconPosition(4.0, 3.0, "C"), // Sala de Jantar
-        "D" to BeaconPosition(5.0, 5.0, "D"), // Sala de Estar
-        "E" to BeaconPosition(7.0, 3.0, "E"), // Quarto 2
-        "F" to BeaconPosition(7.0, 4.0, "F"), // Quarto 3
-        "G" to BeaconPosition(6.0, 2.0, "G"), // Arrumos
-        "H" to BeaconPosition(6.0, 3.0, "H")  // Garagem
+        "A" to BeaconPosition(14.0, 4.0, "A"), // Quarto 1
+        "B" to BeaconPosition(10.0, 5.0, "B"), // Cozinha
+        "C" to BeaconPosition(10.0, 6.0, "C"), // Sala de Jantar
+        "D" to BeaconPosition(10.0, 11.0, "D"), // Sala de Estar
+        "E" to BeaconPosition(13.0, 6.0, "E"), // Quarto 2
+        "F" to BeaconPosition(147.0, 9.0, "F"), // Quarto 3
+        "G" to BeaconPosition(11.0, 4.0, "G"), // Arrumos
+        "H" to BeaconPosition(7.0, 3.0, "H")  // Garagem
     )
 
     private var currentLocationView: ImageView? = null
+    private val rssiReadings = mutableMapOf<String, MutableList<Double>>()
+    private val windowSize = 5 // Tamanho da janela para média móvel
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -125,18 +127,25 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
         paint.textSize = 20f
 
         // Desenhar a grelha e os números
-        val gridSize = 100
-        for (i in 0..7) {
-            for (j in 0..7) {
+        /*val gridSize = 50 // Ajustar o tamanho da grade para 16x16
+        for (i in 0..15) {
+            for (j in 0..15) {
                 val x = i * gridSize
                 val y = j * gridSize
                 canvas.drawRect(x.toFloat(), y.toFloat(), (x + gridSize).toFloat(), (y + gridSize).toFloat(), paint)
                 canvas.drawText("$i,$j", (x + 10).toFloat(), (y + 20).toFloat(), paint)
             }
-        }
+        }*/
 
         imageView.setImageBitmap(bitmap)
         relativeLayout.addView(imageView)
+    }
+
+    private fun filterRssi(identifier: String, rssi: Double): Double {
+        val readings = rssiReadings.getOrPut(identifier) { mutableListOf() }
+        readings.add(rssi)
+        if (readings.size > windowSize) readings.removeAt(0)
+        return readings.average()
     }
 
     override fun onBeaconServiceConnect() {
@@ -147,7 +156,7 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
 
                 val beaconDistances = beacons.associate {
                     val identifier = beaconIdentifiers[it.id2.toInt() to it.id3.toInt()] ?: "Desconhecido"
-                    identifier to it.distance
+                    identifier to filterRssi(identifier, it.distance)
                 }
 
                 val position = calculatePosition(beaconDistances)
@@ -164,7 +173,7 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
                     currentLocationView?.let { mapLayout.removeView(it) }
 
                     // Ajuste a escala conforme necessário
-                    val escala = 100.0f // Ajustar conforme necessário para o tamanho do grid
+                    val escala = 50.0f // Ajustar conforme necessário para o tamanho do grid
                     val x = (it.x * escala).toFloat()
                     val y = (it.y * escala).toFloat()
                     Log.d("MainActivity", "Posição Estimada: x=$x, y=$y") // Adiciona logs para depuração
@@ -202,27 +211,11 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
 
         if (positions.size < 3) return null // Verifique se temos posições suficientes
 
-        val x1 = positions[0].x
-        val y1 = positions[0].y
-        val r1 = distances[0]
+        val weights = distances.map { 1 / (it * it) } // Pesos inversamente proporcionais ao quadrado da distância
+        val sumWeights = weights.sum()
 
-        val x2 = positions[1].x
-        val y2 = positions[1].y
-        val r2 = distances[1]
-
-        val x3 = positions[2].x
-        val y3 = positions[2].y
-        val r3 = distances[2]
-
-        val A = 2 * x2 - 2 * x1
-        val B = 2 * y2 - 2 * y1
-        val C = r1 * r1 - r2 * r2 - x1 * x1 - y1 * y1 + x2 * x2 + y2 * y2
-        val D = 2 * x3 - 2 * x2
-        val E = 2 * y3 - 2 * y2
-        val F = r2 * r2 - r3 * r3 - x2 * x2 - y2 * y2 + x3 * x3 + y3 * y3
-
-        val x = (C * E - F * B) / (E * A - B * D)
-        val y = (C * D - A * F) / (B * D - A * E)
+        val x = positions.zip(weights).sumByDouble { it.first.x * it.second } / sumWeights
+        val y = positions.zip(weights).sumByDouble { it.first.y * it.second } / sumWeights
 
         return Position(x, y)
     }
