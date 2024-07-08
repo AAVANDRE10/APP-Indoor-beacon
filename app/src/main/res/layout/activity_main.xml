@@ -20,7 +20,7 @@
     <RelativeLayout
         android:id="@+id/map_layout"
         android:layout_width="match_parent"
-        android:layout_height="300dp">
+        android:layout_height="400dp">
         <ImageView
             android:id="@+id/estimated_position_icon"
             android:layout_width="wrap_content"
@@ -29,4 +29,19 @@
             android:layout_gravity="center"
             android:visibility="gone" />
     </RelativeLayout>
+
+    <EditText
+        android:id="@+id/end_point"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="End Point (x,y)"
+        android:layout_marginTop="16dp"/>
+
+    <Button
+        android:id="@+id/calculate_path"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Calculate Path"
+        android:layout_marginTop="16dp"
+        android:onClick="onCalculatePathClick"/>
 </LinearLayout>
