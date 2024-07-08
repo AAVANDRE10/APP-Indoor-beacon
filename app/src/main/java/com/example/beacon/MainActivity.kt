@@ -24,6 +24,9 @@ import com.example.beacon.data.entities.Position
 import com.example.beacon.data.entities.BeaconPosition
 import android.graphics.*
 import android.view.MotionEvent
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
+import android.widget.Spinner
 import android.widget.Toast
 
 @Suppress("DEPRECATION")
@@ -55,9 +58,10 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
     private var currentLocationView: ImageView? = null
     private val rssiReadings = mutableMapOf<String, MutableList<Double>>()
     private val windowSize = 5 // Tamanho da janela para média móvel
-    private val weights = IntArray(256) { 0 } // Pesos iniciais (16x16)
-    private val size = 16
+    private var weights = IntArray(256) { 0 } // Pesos iniciais (16x16)
+    private var size = 16
     private var currentEstimatedPosition: Pair<Int, Int>? = null
+    private val originalGridSize = 16 // Define o tamanho da matriz original
 
     // Mapa para armazenar os ícones de peso
     private val weightIcons = mutableMapOf<Pair<Int, Int>, TextView>()
@@ -70,6 +74,34 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
         // Verifica e solicita permissões
         requestPermissionsIfNeeded()
 
+        // Configura o Spinner para selecionar o tamanho da matriz
+        val matrixSizeSpinner = findViewById<Spinner>(R.id.matrix_size_spinner)
+        val adapter = ArrayAdapter.createFromResource(
+            this,
+            R.array.matrix_sizes,
+            android.R.layout.simple_spinner_item
+        )
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        matrixSizeSpinner.adapter = adapter
+        matrixSizeSpinner.setSelection(3) // Seleciona o tamanho padrão 16x16
+
+        matrixSizeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
+                size = when (position) {
+                    0 -> 8
+                    1 -> 16
+                    2 -> 32
+                    3 -> 64
+                    else -> 16
+                }
+                weights = IntArray(size * size) { 0 }
+                drawGridOnMap()
+                currentEstimatedPosition?.let { updateCurrentLocationOnMap(it) }
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>) {}
+        }
+
         // Inicia o BeaconManager
         beaconManager = BeaconManager.getInstanceForApplication(this)
         beaconManager.beaconParsers.add(BeaconParser().setBeaconLayout("m:2-3=0215,i:4-19,i:20-21,i:22-23,p:24-24"))
@@ -81,7 +113,7 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
         val mapLayout = findViewById<RelativeLayout>(R.id.map_layout)
         mapLayout.setOnTouchListener { _, event ->
             if (event.action == MotionEvent.ACTION_DOWN) { // Verifique apenas eventos de toque inicial
-                val escala = 62.5f // Ajustar conforme necessário para o tamanho do grid
+                val escala = 1000f / size // Ajustar conforme necessário para o tamanho do grid
                 val touchedX = (event.x / escala).toInt()
                 val touchedY = (event.y / escala).toInt()
                 val index = touchedY * size + touchedX
@@ -137,6 +169,7 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
 
     private fun drawGridOnMap() {
         val relativeLayout = findViewById<RelativeLayout>(R.id.map_layout)
+        relativeLayout.removeAllViews()
         val imageView = ImageView(this)
         val bitmap = Bitmap.createBitmap(1000, 1000, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -154,9 +187,9 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
         paint.textSize = 20f
 
         // Desenhar a grelha e os números
-        val gridSize = 62.5f // Ajustar o tamanho da grade para 16x16
-        for (i in 0..15) {
-            for (j in 0..15) {
+        val gridSize = 1000f / size // Ajustar o tamanho da grade
+        for (i in 0 until size) {
+            for (j in 0 until size) {
                 val x = i * gridSize
                 val y = j * gridSize
                 canvas.drawRect(x, y, x + gridSize, y + gridSize, paint)
@@ -196,32 +229,8 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
                 }
 
                 position?.let {
-                    // Remover a localização anterior, se existir
-                    currentLocationView?.let { mapLayout.removeView(it) }
-
-                    // Ajuste a escala conforme necessário
-                    val escala = 62.5f // Ajustar conforme necessário para o tamanho do grid
-                    val x = (it.x * escala).toFloat()
-                    val y = (it.y * escala).toFloat()
-                    Log.d("MainActivity", "Posição Estimada: x=$x, y=$y") // Adiciona logs para depuração
-
-                    // Criar um ImageView para a posição estimada
-                    val estimatedPositionIcon = ImageView(this@MainActivity)
-                    estimatedPositionIcon.setImageResource(R.drawable.baseline_location_on_24)
-                    val layoutParams = RelativeLayout.LayoutParams(
-                        RelativeLayout.LayoutParams.WRAP_CONTENT,
-                        RelativeLayout.LayoutParams.WRAP_CONTENT
-                    )
-                    layoutParams.leftMargin = x.toInt()
-                    layoutParams.topMargin = y.toInt()
-                    estimatedPositionIcon.layoutParams = layoutParams
-                    mapLayout.addView(estimatedPositionIcon)
-
-                    // Guardar a referência à localização atual
-                    currentLocationView = estimatedPositionIcon
-
-                    // Guardar a posição estimada atual
                     currentEstimatedPosition = Pair(it.x.toInt(), it.y.toInt())
+                    updateCurrentLocationOnMap(currentEstimatedPosition!!)
                 }
             }
         }
@@ -231,6 +240,28 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
         } catch (e: RemoteException) {
             e.printStackTrace()
         }
+    }
+
+    private fun updateCurrentLocationOnMap(position: Pair<Int, Int>) {
+        val mapLayout = findViewById<RelativeLayout>(R.id.map_layout)
+        val escala = 1000f / originalGridSize // Usar o tamanho da matriz original para escalar
+
+        currentLocationView?.let { mapLayout.removeView(it) }
+
+        val x = position.first * escala
+        val y = position.second * escala
+
+        val estimatedPositionIcon = ImageView(this@MainActivity)
+        estimatedPositionIcon.setImageResource(R.drawable.baseline_location_on_24)
+        val layoutParams = RelativeLayout.LayoutParams(
+            RelativeLayout.LayoutParams.WRAP_CONTENT,
+            RelativeLayout.LayoutParams.WRAP_CONTENT
+        )
+        layoutParams.leftMargin = x.toInt()
+        layoutParams.topMargin = y.toInt()
+        estimatedPositionIcon.layoutParams = layoutParams
+        mapLayout.addView(estimatedPositionIcon)
+        currentLocationView = estimatedPositionIcon
     }
 
     private fun drawWeightOnGrid(x: Int, y: Int, weight: Int, mapLayout: RelativeLayout) {
@@ -246,8 +277,8 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
             RelativeLayout.LayoutParams.WRAP_CONTENT,
             RelativeLayout.LayoutParams.WRAP_CONTENT
         )
-        layoutParams.leftMargin = (x * 62.5).toInt()
-        layoutParams.topMargin = (y * 62.5).toInt()
+        layoutParams.leftMargin = (x * 1000f / size).toInt()
+        layoutParams.topMargin = (y * 1000f / size).toInt()
         weightIcon.layoutParams = layoutParams
         mapLayout.addView(weightIcon)
 
@@ -378,12 +409,15 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
     }
 
     private fun getCurrentLocation(): Pair<Int, Int>? {
-        return currentEstimatedPosition
+        return currentEstimatedPosition?.let { (x, y) ->
+            val escala = originalGridSize / size.toFloat()
+            Pair((x / escala).toInt(), (y / escala).toInt())
+        }
     }
 
     private fun drawPathOnMap(path: List<Pair<Int, Int>>) {
         val mapLayout = findViewById<RelativeLayout>(R.id.map_layout)
-        val escala = 62.5f
+        val escala = 1000f / size
 
         // Remove previous path views
         pathViews.forEach { mapLayout.removeView(it) }

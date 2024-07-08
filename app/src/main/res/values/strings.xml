@@ -1,4 +1,10 @@
 <resources>
     <string name="app_name">Beacon</string>
     <string name="title_activity_main">MainActivity</string>
+    <string-array name="matrix_sizes">
+        <item>8x8</item>
+        <item>16x16</item>
+        <item>32x32</item>
+        <item>64x64</item>
+    </string-array>
 </resources>
