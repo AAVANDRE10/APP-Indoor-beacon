@@ -33,6 +33,7 @@ import androidx.lifecycle.Observer
 import com.example.beacon.algorithm.PathFinder
 import com.example.beacon.algorithm.PositionCalculator
 import com.example.beacon.data.entities.Weight
+import com.example.beacon.vm.BeaconViewModel
 import com.example.beacon.vm.WeightViewModel
 import org.altbeacon.beacon.Beacon
 
@@ -51,28 +52,17 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
         Pair(64608 to 31, "H")
     )
 
-    private val beaconPositions = mapOf(
-        "A" to BeaconPosition(13.0, 6.0, "A"),
-        "B" to BeaconPosition(10.0, 6.0, "B"),
-        "C" to BeaconPosition(10.0, 8.0, "C"),
-        "D" to BeaconPosition(10.0, 11.0, "D"),
-        "E" to BeaconPosition(13.0, 8.0, "E"),
-        "F" to BeaconPosition(13.0, 11.0, "F"),
-        "G" to BeaconPosition(11.0, 5.0, "G"),
-        "H" to BeaconPosition(6.0, 4.0, "H")
-    )
-
+    private val beaconViewModel: BeaconViewModel by viewModels()
     private var currentLocationView: ImageView? = null
     private val rssiReadings = mutableMapOf<String, MutableList<Double>>()
     private val windowSize = 5
     private var weights = IntArray(256) { 0 }
     private var size = 16
     private var currentEstimatedPosition: Pair<Int, Int>? = null
-    private val originalGridSize = 16
     private val weightIcons = mutableMapOf<Pair<Int, Int>, TextView>()
     private val pathViews = mutableListOf<View>()
     private val viewModel: WeightViewModel by viewModels()
-    private val positionCalculator = PositionCalculator(beaconPositions)
+    private val positionCalculator = PositionCalculator(mapOf())
     private val pathFinder = PathFinder()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -88,6 +78,14 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
         viewModel.weights.observe(this, Observer { weightsList ->
             weightsList?.let {
                 updateWeights(it)
+            }
+        })
+
+        beaconViewModel.beaconPositions.observe(this, Observer { beaconPositions ->
+            beaconPositions?.let {
+                updateBeaconPositions(it)
+                positionCalculator.updateBeaconPositions(it.associateBy { pos -> pos.identifier })
+                Log.d("MainActivity", "Updated beacon positions in PositionCalculator")
             }
         })
     }
@@ -138,10 +136,15 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
         )
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         matrixSizeSpinner.adapter = adapter
-        matrixSizeSpinner.setSelection(1)
+        matrixSizeSpinner.setSelection(0)
 
         matrixSizeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
+                val matrixId = when (position) {
+                    0 -> 1
+                    1 -> 2
+                    else -> 2
+                }
                 size = when (position) {
                     0 -> 8
                     1 -> 16
@@ -151,10 +154,18 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
                 drawGridOnMap()
                 currentEstimatedPosition?.let { updateCurrentLocationOnMap(it) }
                 viewModel.loadWeights(size)
+                beaconViewModel.loadBeaconPositions(matrixId)
             }
 
             override fun onNothingSelected(parent: AdapterView<*>) {}
         }
+    }
+
+    private fun updateBeaconPositions(beaconPositions: List<BeaconPosition>) {
+        beaconPositions.forEach { beaconPosition ->
+            Log.d("MainActivity", "Beacon: ${beaconPosition.identifier}, X: ${beaconPosition.x}, Y: ${beaconPosition.y}")
+        }
+        positionCalculator.updateBeaconPositions(beaconPositions.associateBy { it.identifier })
     }
 
     private fun initializeBeaconManager() {
@@ -218,7 +229,7 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
 
     private fun updateCurrentLocationOnMap(position: Pair<Int, Int>) {
         val mapLayout = findViewById<RelativeLayout>(R.id.map_layout)
-        val escala = 1000f / originalGridSize
+        val escala = 1000f / size // Ajuste a escala de acordo com o tamanho atual da grade
 
         currentLocationView?.let { mapLayout.removeView(it) }
 
@@ -264,6 +275,10 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
         val beaconDistances = beacons.associate {
             val identifier = beaconIdentifiers[it.id2.toInt() to it.id3.toInt()] ?: "Desconhecido"
             identifier to filterRssi(identifier, it.distance)
+        }
+
+        beaconDistances.forEach { (identifier, distance) ->
+            Log.d("BeaconDetection", "Identifier: $identifier, Distance: $distance")
         }
 
         val position = positionCalculator.calculatePosition(beaconDistances)
@@ -336,7 +351,7 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
 
     private fun getCurrentLocation(): Pair<Int, Int>? {
         return currentEstimatedPosition?.let { (x, y) ->
-            val escala = originalGridSize / size.toFloat()
+            val escala = 1000f / size.toFloat() // Ajuste a escala de acordo com o tamanho atual da grade
             Pair((x / escala).toInt(), (y / escala).toInt())
         }
     }
