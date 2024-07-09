@@ -28,6 +28,13 @@ import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Spinner
 import android.widget.Toast
+import androidx.activity.viewModels
+import androidx.lifecycle.Observer
+import com.example.beacon.algorithm.PathFinder
+import com.example.beacon.algorithm.PositionCalculator
+import com.example.beacon.data.entities.Weight
+import com.example.beacon.vm.WeightViewModel
+import org.altbeacon.beacon.Beacon
 
 @Suppress("DEPRECATION")
 class MainActivity : AppCompatActivity(), BeaconConsumer {
@@ -45,88 +52,44 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
     )
 
     private val beaconPositions = mapOf(
-        "A" to BeaconPosition(14.0, 4.0, "A"), // Quarto 1
-        "B" to BeaconPosition(10.0, 5.0, "B"), // Cozinha
-        "C" to BeaconPosition(10.0, 6.0, "C"), // Sala de Jantar
-        "D" to BeaconPosition(10.0, 11.0, "D"), // Sala de Estar
-        "E" to BeaconPosition(13.0, 6.0, "E"), // Quarto 2
-        "F" to BeaconPosition(14.0, 9.0, "F"), // Quarto 3
-        "G" to BeaconPosition(11.0, 4.0, "G"), // Arrumos
-        "H" to BeaconPosition(7.0, 3.0, "H")  // Garagem
+        "A" to BeaconPosition(13.0, 6.0, "A"),
+        "B" to BeaconPosition(10.0, 6.0, "B"),
+        "C" to BeaconPosition(10.0, 8.0, "C"),
+        "D" to BeaconPosition(10.0, 11.0, "D"),
+        "E" to BeaconPosition(13.0, 8.0, "E"),
+        "F" to BeaconPosition(13.0, 11.0, "F"),
+        "G" to BeaconPosition(11.0, 5.0, "G"),
+        "H" to BeaconPosition(6.0, 4.0, "H")
     )
 
     private var currentLocationView: ImageView? = null
     private val rssiReadings = mutableMapOf<String, MutableList<Double>>()
-    private val windowSize = 5 // Tamanho da janela para média móvel
-    private var weights = IntArray(256) { 0 } // Pesos iniciais (16x16)
+    private val windowSize = 5
+    private var weights = IntArray(256) { 0 }
     private var size = 16
     private var currentEstimatedPosition: Pair<Int, Int>? = null
-    private val originalGridSize = 16 // Define o tamanho da matriz original
-
-    // Mapa para armazenar os ícones de peso
+    private val originalGridSize = 16
     private val weightIcons = mutableMapOf<Pair<Int, Int>, TextView>()
-    private val pathViews = mutableListOf<View>() // Armazena as visualizações do caminho
+    private val pathViews = mutableListOf<View>()
+    private val viewModel: WeightViewModel by viewModels()
+    private val positionCalculator = PositionCalculator(beaconPositions)
+    private val pathFinder = PathFinder()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Verifica e solicita permissões
         requestPermissionsIfNeeded()
-
-        // Configura o Spinner para selecionar o tamanho da matriz
-        val matrixSizeSpinner = findViewById<Spinner>(R.id.matrix_size_spinner)
-        val adapter = ArrayAdapter.createFromResource(
-            this,
-            R.array.matrix_sizes,
-            android.R.layout.simple_spinner_item
-        )
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        matrixSizeSpinner.adapter = adapter
-        matrixSizeSpinner.setSelection(3) // Seleciona o tamanho padrão 16x16
-
-        matrixSizeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
-                size = when (position) {
-                    0 -> 8
-                    1 -> 16
-                    2 -> 32
-                    3 -> 64
-                    else -> 16
-                }
-                weights = IntArray(size * size) { 0 }
-                drawGridOnMap()
-                currentEstimatedPosition?.let { updateCurrentLocationOnMap(it) }
-            }
-
-            override fun onNothingSelected(parent: AdapterView<*>) {}
-        }
-
-        // Inicia o BeaconManager
-        beaconManager = BeaconManager.getInstanceForApplication(this)
-        beaconManager.beaconParsers.add(BeaconParser().setBeaconLayout("m:2-3=0215,i:4-19,i:20-21,i:22-23,p:24-24"))
-
-        // Desenha a grelha na imagem da planta
+        configureMatrixSizeSpinner()
+        initializeBeaconManager()
+        initializeMapTouchListener()
         drawGridOnMap()
 
-        // Inicializa o listener de toque no mapa
-        val mapLayout = findViewById<RelativeLayout>(R.id.map_layout)
-        mapLayout.setOnTouchListener { _, event ->
-            if (event.action == MotionEvent.ACTION_DOWN) { // Verifique apenas eventos de toque inicial
-                val escala = 1000f / size // Ajustar conforme necessário para o tamanho do grid
-                val touchedX = (event.x / escala).toInt()
-                val touchedY = (event.y / escala).toInt()
-                val index = touchedY * size + touchedX
-                if (index in weights.indices) {
-                    weights[index] = (weights[index] % 5) + 1 // Definir pesos sequenciais de 1 a 5
-                    drawWeightOnGrid(touchedX, touchedY, weights[index], mapLayout)
-                    Toast.makeText(this, "Peso ajustado para ${weights[index]} na posição ($touchedX, $touchedY)", Toast.LENGTH_SHORT).show()
-                }
+        viewModel.weights.observe(this, Observer { weightsList ->
+            weightsList?.let {
+                updateWeights(it)
             }
-            true
-        }
-
-        beaconManager.bind(this)
+        })
     }
 
     private fun requestPermissionsIfNeeded() {
@@ -159,11 +122,66 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
             if (ActivityCompat.checkSelfPermission(
                     this,
                     Manifest.permission.BLUETOOTH_CONNECT
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
+                ) != PackageManager.PERMISSION_GRANTED) {
                 return
             }
             startActivityForResult(enableBtIntent, 1)
+        }
+    }
+
+    private fun configureMatrixSizeSpinner() {
+        val matrixSizeSpinner = findViewById<Spinner>(R.id.matrix_size_spinner)
+        val adapter = ArrayAdapter.createFromResource(
+            this,
+            R.array.matrix_sizes,
+            android.R.layout.simple_spinner_item
+        )
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        matrixSizeSpinner.adapter = adapter
+        matrixSizeSpinner.setSelection(1)
+
+        matrixSizeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
+                size = when (position) {
+                    0 -> 8
+                    1 -> 16
+                    else -> 16
+                }
+                weights = IntArray(size * size) { 0 }
+                drawGridOnMap()
+                currentEstimatedPosition?.let { updateCurrentLocationOnMap(it) }
+                viewModel.loadWeights(size)
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>) {}
+        }
+    }
+
+    private fun initializeBeaconManager() {
+        beaconManager = BeaconManager.getInstanceForApplication(this)
+        beaconManager.beaconParsers.add(BeaconParser().setBeaconLayout("m:2-3=0215,i:4-19,i:20-21,i:22-23,p:24-24"))
+        beaconManager.bind(this)
+    }
+
+    private fun initializeMapTouchListener() {
+        val mapLayout = findViewById<RelativeLayout>(R.id.map_layout)
+        mapLayout.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_DOWN) {
+                handleMapTouch(event.x, event.y)
+            }
+            true
+        }
+    }
+
+    private fun handleMapTouch(x: Float, y: Float) {
+        val escala = 1000f / size
+        val touchedX = (x / escala).toInt()
+        val touchedY = (y / escala).toInt()
+        val index = touchedY * size + touchedX
+        if (index in weights.indices) {
+            weights[index] = (weights[index] % 5) + 1
+            drawWeightOnGrid(touchedX, touchedY, weights[index], findViewById(R.id.map_layout))
+            Toast.makeText(this, "Peso ajustado para ${weights[index]} na posição ($touchedX, $touchedY)", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -175,19 +193,16 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
         val canvas = Canvas(bitmap)
         val paint = Paint()
 
-        // Desenhar a planta de fundo
         val background = BitmapFactory.decodeResource(resources, R.drawable.output)
         val scaleFactor = Math.min(bitmap.width.toFloat() / background.width, bitmap.height.toFloat() / background.height)
         val scaledBitmap = Bitmap.createScaledBitmap(background, (background.width * scaleFactor).toInt(), (background.height * scaleFactor).toInt(), true)
         canvas.drawBitmap(scaledBitmap, 0f, 0f, paint)
 
-        // Configurar a pintura para o texto
         paint.color = Color.RED
         paint.style = Paint.Style.STROKE
         paint.textSize = 20f
 
-        // Desenhar a grelha e os números
-        val gridSize = 1000f / size // Ajustar o tamanho da grade
+        val gridSize = 1000f / size
         for (i in 0 until size) {
             for (j in 0 until size) {
                 val x = i * gridSize
@@ -201,50 +216,9 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
         relativeLayout.addView(imageView)
     }
 
-    private fun filterRssi(identifier: String, rssi: Double): Double {
-        val readings = rssiReadings.getOrPut(identifier) { mutableListOf() }
-        readings.add(rssi)
-        if (readings.size > windowSize) readings.removeAt(0)
-        return readings.average()
-    }
-
-    override fun onBeaconServiceConnect() {
-        beaconManager.addRangeNotifier { beacons, region ->
-            runOnUiThread {
-                val textView = findViewById<TextView>(R.id.textView)
-                val mapLayout = findViewById<RelativeLayout>(R.id.map_layout)
-
-                val beaconDistances = beacons.associate {
-                    val identifier = beaconIdentifiers[it.id2.toInt() to it.id3.toInt()] ?: "Desconhecido"
-                    identifier to filterRssi(identifier, it.distance)
-                }
-
-                val position = calculatePosition(beaconDistances)
-                textView.text = buildString {
-                    append("Beacons Detectados:\n")
-                    beacons.forEach { beacon ->
-                        val identifier = beaconIdentifiers[beacon.id2.toInt() to beacon.id3.toInt()] ?: "Desconhecido"
-                        append("Identificador: $identifier, UUID: ${beacon.id1}, Major: ${beacon.id2}, Minor: ${beacon.id3}, Distância: ${String.format("%.2f", beacon.distance)}m\n")
-                    }
-                }
-
-                position?.let {
-                    currentEstimatedPosition = Pair(it.x.toInt(), it.y.toInt())
-                    updateCurrentLocationOnMap(currentEstimatedPosition!!)
-                }
-            }
-        }
-
-        try {
-            beaconManager.startRangingBeaconsInRegion(Region("myBeaconRegion", null, null, null))
-        } catch (e: RemoteException) {
-            e.printStackTrace()
-        }
-    }
-
     private fun updateCurrentLocationOnMap(position: Pair<Int, Int>) {
         val mapLayout = findViewById<RelativeLayout>(R.id.map_layout)
-        val escala = 1000f / originalGridSize // Usar o tamanho da matriz original para escalar
+        val escala = 1000f / originalGridSize
 
         currentLocationView?.let { mapLayout.removeView(it) }
 
@@ -265,10 +239,8 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
     }
 
     private fun drawWeightOnGrid(x: Int, y: Int, weight: Int, mapLayout: RelativeLayout) {
-        // Remover ícone anterior se existir
         weightIcons[Pair(x, y)]?.let { mapLayout.removeView(it) }
 
-        // Criar e adicionar novo ícone de peso
         val weightIcon = TextView(this)
         weightIcon.text = weight.toString()
         weightIcon.setTextColor(Color.BLACK)
@@ -282,84 +254,38 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
         weightIcon.layoutParams = layoutParams
         mapLayout.addView(weightIcon)
 
-        // Armazenar a referência ao novo ícone de peso
         weightIcons[Pair(x, y)] = weightIcon
     }
 
-    private fun calculatePosition(beaconDistances: Map<String, Double>): Position? {
-        if (beaconDistances.size < 3) return null // Precisamos de pelo menos 3 beacons
+    private fun handleBeaconDetection(beacons: Collection<Beacon>) {
+        val textView = findViewById<TextView>(R.id.textView)
+        val mapLayout = findViewById<RelativeLayout>(R.id.map_layout)
 
-        val positions = beaconDistances.keys.mapNotNull { beaconPositions[it] }
-        val distances = beaconDistances.values.toList()
+        val beaconDistances = beacons.associate {
+            val identifier = beaconIdentifiers[it.id2.toInt() to it.id3.toInt()] ?: "Desconhecido"
+            identifier to filterRssi(identifier, it.distance)
+        }
 
-        if (positions.size < 3) return null // Verifique se temos posições suficientes
-
-        val weights = distances.map { 1 / (it * it) } // Pesos inversamente proporcionais ao quadrado da distância
-        val sumWeights = weights.sum()
-
-        val x = positions.zip(weights).sumByDouble { it.first.x * it.second } / sumWeights
-        val y = positions.zip(weights).sumByDouble { it.first.y * it.second } / sumWeights
-
-        return Position(x, y)
-    }
-
-    private fun findShortestPath(matrix: Array<IntArray>, start: Pair<Int, Int>, end: Pair<Int, Int>): List<Pair<Int, Int>> {
-        val n = matrix.size
-        val distances = Array(n) { IntArray(n) { Int.MAX_VALUE } }
-        distances[start.first][start.second] = matrix[start.first][start.second]
-
-        val previous = Array(n) { arrayOfNulls<Pair<Int, Int>?>(n) }
-        val visited = Array(n) { BooleanArray(n) { false } }
-        val queue = mutableListOf<Pair<Int, Int>>()
-        queue.add(start)
-
-        while (queue.isNotEmpty()) {
-            val (x, y) = queue.removeAt(0)
-            visited[x][y] = true
-
-            val neighbors = getNeighbors(x, y, matrix)
-            for ((nx, ny) in neighbors) {
-                val newDistance = distances[x][y] + matrix[nx][ny]
-                if (newDistance < distances[nx][ny]) {
-                    distances[nx][ny] = newDistance
-                    previous[nx][ny] = Pair(x, y)
-                    queue.add(Pair(nx, ny))
-                }
+        val position = positionCalculator.calculatePosition(beaconDistances)
+        textView.text = buildString {
+            append("Beacons Detectados:\n")
+            beacons.forEach { beacon ->
+                val identifier = beaconIdentifiers[beacon.id2.toInt() to beacon.id3.toInt()] ?: "Desconhecido"
+                append("Identificador: $identifier, UUID: ${beacon.id1}, Major: ${beacon.id2}, Minor: ${beacon.id3}, Distância: ${String.format("%.2f", beacon.distance)}m\n")
             }
         }
 
-        val shortestPath = mutableListOf<Pair<Int, Int>>()
-        var current = end
-        while (current != start) {
-            shortestPath.add(current)
-            current = previous[current.first][current.second] ?: break
-        }
-        shortestPath.add(start)
-        shortestPath.reverse()
-
-        return if (distances[end.first][end.second] == Int.MAX_VALUE) {
-            Log.e("MainActivity", "No path found")
-            emptyList()
-        } else {
-            Log.d("MainActivity", "Path found with distance: ${distances[end.first][end.second]}")
-            Log.d("MainActivity", "Path: $shortestPath")
-            shortestPath
+        position?.let {
+            currentEstimatedPosition = Pair(it.x.toInt(), it.y.toInt())
+            updateCurrentLocationOnMap(currentEstimatedPosition!!)
         }
     }
 
-    private fun getNeighbors(x: Int, y: Int, matrix: Array<IntArray>): List<Pair<Int, Int>> {
-        val neighbors = mutableListOf<Pair<Int, Int>>()
-        val directions = listOf(Pair(-1, 0), Pair(0, -1), Pair(1, 0), Pair(0, 1))
-
-        for ((dx, dy) in directions) {
-            val nx = x + dx
-            val ny = y + dy
-            if (nx in matrix.indices && ny in matrix[0].indices && matrix[nx][ny] > 0) {
-                neighbors.add(Pair(nx, ny))
-            }
-        }
-        Log.d("MainActivity", "Neighbors of ($x, $y): $neighbors")
-        return neighbors
+    private fun filterRssi(identifier: String, rssi: Double): Double {
+        val readings = rssiReadings.getOrPut(identifier) { mutableListOf() }
+        readings.add(rssi)
+        if (readings.size > windowSize) readings.removeAt(0)
+        return readings.average()
     }
 
     fun onCalculatePathClick(view: View) {
@@ -388,7 +314,7 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
             return
         }
 
-        val path = findShortestPath(matrix, startPoint, endPoint)
+        val path = pathFinder.findShortestPath(matrix, startPoint, endPoint)
         if (path.isEmpty()) {
             Toast.makeText(this, "No path found.", Toast.LENGTH_SHORT).show()
         } else {
@@ -419,7 +345,6 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
         val mapLayout = findViewById<RelativeLayout>(R.id.map_layout)
         val escala = 1000f / size
 
-        // Remove previous path views
         pathViews.forEach { mapLayout.removeView(it) }
         pathViews.clear()
 
@@ -432,6 +357,30 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
             pathView.layoutParams = layoutParams
             mapLayout.addView(pathView)
             pathViews.add(pathView)
+        }
+    }
+
+    private fun updateWeights(weightsList: List<Weight>) {
+        for (weight in weightsList) {
+            val index = weight.y * size + weight.x
+            if (index in weights.indices) {
+                weights[index] = weight.weight
+                drawWeightOnGrid(weight.x, weight.y, weight.weight, findViewById(R.id.map_layout))
+            }
+        }
+    }
+
+    override fun onBeaconServiceConnect() {
+        beaconManager.addRangeNotifier { beacons, _ ->
+            runOnUiThread {
+                handleBeaconDetection(beacons)
+            }
+        }
+
+        try {
+            beaconManager.startRangingBeaconsInRegion(Region("myBeaconRegion", null, null, null))
+        } catch (e: RemoteException) {
+            e.printStackTrace()
         }
     }
 
