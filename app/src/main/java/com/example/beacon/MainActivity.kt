@@ -26,6 +26,7 @@ import android.graphics.*
 import android.view.MotionEvent
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.Button
 import android.widget.Spinner
 import android.widget.Toast
 import androidx.activity.viewModels
@@ -65,6 +66,9 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
     private val positionCalculator = PositionCalculator(mapOf())
     private val pathFinder = PathFinder()
 
+    private var isGridVisible = true
+    private var areWeightsVisible = true
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -74,6 +78,12 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
         initializeBeaconManager()
         initializeMapTouchListener()
         drawGridOnMap()
+
+        findViewById<Button>(R.id.toggle_grid_button).setOnClickListener {
+            isGridVisible = !isGridVisible
+            areWeightsVisible = !areWeightsVisible
+            drawGridOnMap()
+        }
 
         viewModel.weights.observe(this, Observer { weightsList ->
             weightsList?.let {
@@ -209,22 +219,31 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
         val scaledBitmap = Bitmap.createScaledBitmap(background, (background.width * scaleFactor).toInt(), (background.height * scaleFactor).toInt(), true)
         canvas.drawBitmap(scaledBitmap, 0f, 0f, paint)
 
-        paint.color = Color.RED
-        paint.style = Paint.Style.STROKE
-        paint.textSize = 20f
+        if (isGridVisible) {
+            paint.color = Color.RED
+            paint.style = Paint.Style.STROKE
+            paint.textSize = 20f
 
-        val gridSize = 1000f / size
-        for (i in 0 until size) {
-            for (j in 0 until size) {
-                val x = i * gridSize
-                val y = j * gridSize
-                canvas.drawRect(x, y, x + gridSize, y + gridSize, paint)
-                canvas.drawText("$i,$j", x + 10, y + 20, paint)
+            val gridSize = 1000f / size
+            for (i in 0 until size) {
+                for (j in 0 until size) {
+                    val x = i * gridSize
+                    val y = j * gridSize
+                    canvas.drawRect(x, y, x + gridSize, y + gridSize, paint)
+                }
             }
         }
 
         imageView.setImageBitmap(bitmap)
         relativeLayout.addView(imageView)
+
+        if (areWeightsVisible) {
+            weights.forEachIndexed { index, weight ->
+                val x = index % size
+                val y = index / size
+                drawWeightOnGrid(x, y, weight, relativeLayout)
+            }
+        }
     }
 
     private fun updateCurrentLocationOnMap(position: Pair<Int, Int>) {
@@ -250,6 +269,8 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
     }
 
     private fun drawWeightOnGrid(x: Int, y: Int, weight: Int, mapLayout: RelativeLayout) {
+        if (!areWeightsVisible) return
+
         weightIcons[Pair(x, y)]?.let { mapLayout.removeView(it) }
 
         val weightIcon = TextView(this)

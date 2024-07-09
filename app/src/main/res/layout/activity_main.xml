@@ -50,4 +50,11 @@
         android:text="Calculate Path"
         android:layout_marginTop="16dp"
         android:onClick="onCalculatePathClick"/>
+
+    <Button
+        android:id="@+id/toggle_grid_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Toggle Grid"
+        android:layout_marginTop="16dp"/>
 </LinearLayout>
