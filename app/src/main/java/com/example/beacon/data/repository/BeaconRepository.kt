@@ -1,4 +1,4 @@
-package com.example.beacon.repository
+package com.example.beacon.data.repository
 
 import android.util.Log
 import androidx.lifecycle.LiveData

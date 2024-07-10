@@ -34,8 +34,8 @@ import androidx.lifecycle.Observer
 import com.example.beacon.algorithm.PathFinder
 import com.example.beacon.algorithm.PositionCalculator
 import com.example.beacon.data.entities.Weight
-import com.example.beacon.vm.BeaconViewModel
-import com.example.beacon.vm.WeightViewModel
+import com.example.beacon.data.vm.BeaconViewModel
+import com.example.beacon.data.vm.WeightViewModel
 import org.altbeacon.beacon.Beacon
 
 @Suppress("DEPRECATION")

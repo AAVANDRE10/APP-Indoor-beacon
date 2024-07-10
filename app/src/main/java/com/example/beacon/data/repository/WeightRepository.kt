@@ -1,4 +1,4 @@
-package com.example.beacon.repository
+package com.example.beacon.data.repository
 
 import com.example.beacon.api.RetrofitInstance
 import com.example.beacon.data.entities.Weight

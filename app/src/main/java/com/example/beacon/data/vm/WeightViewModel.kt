@@ -1,10 +1,10 @@
-package com.example.beacon.vm
+package com.example.beacon.data.vm
 
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import com.example.beacon.data.entities.Weight
-import com.example.beacon.repository.WeightRepository
+import com.example.beacon.data.repository.WeightRepository
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
