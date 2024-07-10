@@ -76,7 +76,6 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
         requestPermissionsIfNeeded()
         configureMatrixSizeSpinner()
         initializeBeaconManager()
-        initializeMapTouchListener()
         drawGridOnMap()
 
         findViewById<Button>(R.id.toggle_grid_button).setOnClickListener {
@@ -184,28 +183,6 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
         beaconManager.bind(this)
     }
 
-    private fun initializeMapTouchListener() {
-        val mapLayout = findViewById<RelativeLayout>(R.id.map_layout)
-        mapLayout.setOnTouchListener { _, event ->
-            if (event.action == MotionEvent.ACTION_DOWN) {
-                handleMapTouch(event.x, event.y)
-            }
-            true
-        }
-    }
-
-    private fun handleMapTouch(x: Float, y: Float) {
-        val escala = 1000f / size
-        val touchedX = (x / escala).toInt()
-        val touchedY = (y / escala).toInt()
-        val index = touchedY * size + touchedX
-        if (index in weights.indices) {
-            weights[index] = (weights[index] % 5) + 1
-            drawWeightOnGrid(touchedX, touchedY, weights[index], findViewById(R.id.map_layout))
-            Toast.makeText(this, "Peso ajustado para ${weights[index]} na posição ($touchedX, $touchedY)", Toast.LENGTH_SHORT).show()
-        }
-    }
-
     private fun drawGridOnMap() {
         val relativeLayout = findViewById<RelativeLayout>(R.id.map_layout)
         relativeLayout.removeAllViews()
@@ -236,14 +213,6 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
 
         imageView.setImageBitmap(bitmap)
         relativeLayout.addView(imageView)
-
-        if (areWeightsVisible) {
-            weights.forEachIndexed { index, weight ->
-                val x = index % size
-                val y = index / size
-                drawWeightOnGrid(x, y, weight, relativeLayout)
-            }
-        }
     }
 
     private fun updateCurrentLocationOnMap(position: Pair<Int, Int>) {
