@@ -328,7 +328,7 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
         val endPointInput = findViewById<EditText>(R.id.end_point).text.toString()
         val endPoint = endPointInput.split(",").let { Pair(it[0].toInt(), it[1].toInt()) }
 
-        val startPoint = getCurrentLocation() ?: run {
+        val startPoint = currentEstimatedPosition ?: run {
             Toast.makeText(this, "Current location not available.", Toast.LENGTH_SHORT).show()
             return
         }
@@ -368,13 +368,6 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
 
     private fun isValidPoint(point: Pair<Int, Int>, matrix: Array<IntArray>): Boolean {
         return matrix[point.first][point.second] != 0
-    }
-
-    private fun getCurrentLocation(): Pair<Int, Int>? {
-        return currentEstimatedPosition?.let { (x, y) ->
-            val escala = 1000f / size.toFloat() // Ajuste a escala de acordo com o tamanho atual da grade
-            Pair((x / escala).toInt(), (y / escala).toInt())
-        }
     }
 
     private fun drawPathOnMap(path: List<Pair<Int, Int>>) {
