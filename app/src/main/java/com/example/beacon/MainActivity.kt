@@ -73,6 +73,33 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        val mapLayout = findViewById<RelativeLayout>(R.id.map_layout)
+
+        // Adiciona um listener de toque à RelativeLayout do mapa
+        mapLayout.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    // Obtém as coordenadas do toque
+                    val x = event.x.toInt()
+                    val y = event.y.toInt()
+
+                    // Converte as coordenadas para o tamanho da grade
+                    val gridSize = 1000 / size
+                    val gridX = x / gridSize
+                    val gridY = y / gridSize
+
+                    // Define o ponto de destino (endPoint)
+                    val endPoint = Pair(gridX, gridY)
+
+                    // Atualiza a interface com o caminho para o ponto de destino
+                    drawPathToDestination(endPoint)
+
+                    true
+                }
+                else -> false
+            }
+        }
+
         requestPermissionsIfNeeded()
         configureMatrixSizeSpinner()
         initializeBeaconManager()
@@ -293,40 +320,6 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
         return readings.average()
     }
 
-    fun onCalculatePathClick(view: View) {
-        val endPointInput = findViewById<EditText>(R.id.end_point).text.toString()
-        val endPoint = endPointInput.split(",").let { Pair(it[0].toInt(), it[1].toInt()) }
-
-        val startPoint = currentEstimatedPosition ?: run {
-            Toast.makeText(this, "Current location not available.", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        Log.d("MainActivity", "Start Point: $startPoint, End Point: $endPoint")
-
-        val matrix = generateMatrixFromWeights(weights, size)
-
-        Log.d("MainActivity", "Weight Matrix: ${matrix.contentDeepToString()}")
-
-        if (startPoint.first !in 0 until size || startPoint.second !in 0 until size ||
-            endPoint.first !in 0 until size || endPoint.second !in 0 until size) {
-            Toast.makeText(this, "Points are out of bounds.", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        if (!isValidPoint(startPoint, matrix) || !isValidPoint(endPoint, matrix)) {
-            Toast.makeText(this, "Start or end point is not valid.", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val path = pathFinder.findShortestPath(matrix, startPoint, endPoint)
-        if (path.isEmpty()) {
-            Toast.makeText(this, "No path found.", Toast.LENGTH_SHORT).show()
-        } else {
-            drawPathOnMap(path)
-        }
-    }
-
     private fun generateMatrixFromWeights(weights: IntArray, size: Int): Array<IntArray> {
         val matrix = Array(size) { IntArray(size) }
         for (i in weights.indices) {
@@ -379,6 +372,45 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
             beaconManager.startRangingBeaconsInRegion(Region("myBeaconRegion", null, null, null))
         } catch (e: RemoteException) {
             e.printStackTrace()
+        }
+    }
+
+    private fun drawPathToDestination(endPoint: Pair<Int, Int>) {
+        // Limpa caminhos anteriores
+        pathViews.forEach { findViewById<RelativeLayout>(R.id.map_layout).removeView(it) }
+        pathViews.clear()
+
+        // Desenha o ponto de destino em verde
+        val mapLayout = findViewById<RelativeLayout>(R.id.map_layout)
+        val escala = 1000f / size
+
+        val endPointView = View(this)
+        endPointView.setBackgroundColor(Color.GREEN)
+        val layoutParams = RelativeLayout.LayoutParams((escala / 2).toInt(), (escala / 2).toInt())
+        layoutParams.leftMargin = (endPoint.first * escala).toInt()
+        layoutParams.topMargin = (endPoint.second * escala).toInt()
+        endPointView.layoutParams = layoutParams
+        mapLayout.addView(endPointView)
+        pathViews.add(endPointView)
+
+        // Calcula e desenha o caminho até o ponto de destino
+        val startPoint = currentEstimatedPosition ?: run {
+            Toast.makeText(this, "Current location not available.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val matrix = generateMatrixFromWeights(weights, size)
+
+        if (!isValidPoint(startPoint, matrix) || !isValidPoint(endPoint, matrix)) {
+            Toast.makeText(this, "Start or end point is not valid.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val path = pathFinder.findShortestPath(matrix, startPoint, endPoint)
+        if (path.isEmpty()) {
+            Toast.makeText(this, "No path found.", Toast.LENGTH_SHORT).show()
+        } else {
+            drawPathOnMap(path)
         }
     }
 
