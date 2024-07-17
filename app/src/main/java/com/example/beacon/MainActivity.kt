@@ -244,7 +244,7 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
 
     private fun updateCurrentLocationOnMap(position: Pair<Int, Int>) {
         val mapLayout = findViewById<RelativeLayout>(R.id.map_layout)
-        val escala = 1000f / size // Ajuste a escala de acordo com o tamanho atual da grade
+        val escala = 1000f / size
 
         currentLocationView?.let { mapLayout.removeView(it) }
 
@@ -429,7 +429,7 @@ class MainActivity : AppCompatActivity(), BeaconConsumer {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 1 && resultCode == RESULT_OK) {
-            // Bluetooth ativo
+            // Bluetooth ligado
         }
     }
 }
